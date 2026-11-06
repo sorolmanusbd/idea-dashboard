@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Idea Dashboard</title>
+<style>
+:root{--bg:#f6f6f4;--card:#fff;--tx:#1d1d1b;--mut:#6b6b66;--bd:#e2e2dc;--ac:#c4301c;--ok:#1a7f4b}
+@media(prefers-color-scheme:dark){:root{--bg:#161615;--card:#212120;--tx:#ecece8;--mut:#9a9a94;--bd:#33332f;--ac:#ff6a55;--ok:#4cc38a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.5 system-ui,"Noto Sans Bengali",sans-serif}
+header{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--bd);background:var(--card);position:sticky;top:0;z-index:5}
+h1{font-size:17px;margin:0 12px 0 0}
+.tab{border:0;background:none;color:var(--mut);padding:8px 12px;border-radius:8px;cursor:pointer;font:inherit}
+.tab.on{background:var(--tx);color:var(--bg)}
+main{max-width:1100px;margin:0 auto;padding:16px}
+input,select,textarea,button{font:inherit;color:var(--tx)}
+input,select,textarea{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:8px 10px}
+.btn{background:var(--ac);color:#fff;border:0;border-radius:8px;padding:8px 14px;cursor:pointer}
+.btn.g{background:none;color:var(--tx);border:1px solid var(--bd)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.chip{background:var(--card);border:1px solid var(--bd);border-radius:99px;padding:3px 6px 3px 12px;font-size:13px}
+.chip button{border:0;background:none;color:var(--mut);cursor:pointer;font-size:15px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;overflow:hidden;display:flex;flex-direction:column}
+.card img{width:100%;aspect-ratio:16/9;object-fit:cover;display:block;background:var(--bd)}
+.cb{padding:10px 12px;display:flex;flex-direction:column;gap:4px;flex:1}
+.cb a{color:var(--tx);text-decoration:none;font-weight:600;font-size:14px}
+.cb a:hover{text-decoration:underline}
+.m{color:var(--mut);font-size:12.5px}
+.badge{display:inline-block;background:var(--ok);color:#fff;border-radius:6px;padding:1px 7px;font-size:12px;font-weight:700}
+.badge.lo{background:var(--mut)}
+.sv{margin-top:auto;padding-top:6px}
+.sv button{width:100%}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--bd);border-radius:12px;overflow:hidden}
+td,th{padding:8px 10px;border-bottom:1px solid var(--bd);text-align:left;font-size:13.5px;vertical-align:top}
+.wrap{overflow-x:auto}
+.sug{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.sug button{background:var(--card);border:1px solid var(--bd);border-radius:99px;padding:3px 12px;cursor:pointer;font-size:13px}
+.idea{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;margin-bottom:10px;display:flex;gap:12px}
+.idea img{width:140px;aspect-ratio:16/9;object-fit:cover;border-radius:8px;flex:none}
+.idea textarea{width:100%;min-height:54px;margin-top:6px}
+#msg{color:var(--ac);margin-bottom:10px;white-space:pre-wrap}
+.empty{color:var(--mut);padding:30px;text-align:center}
+</style>
+</head>
+<body>
+<header>
+  <h1>🎯 Idea Dashboard</h1>
+  <button class="tab" data-t="business">Business</button>
+  <button class="tab" data-t="tech">Tech (বাংলা)</button>
+  <button class="tab" data-t="kw">Tech (English কিওয়ার্ড)</button>
+  <button class="tab" data-t="ai">✨ নতুন ও AI আইডিয়া</button>
+  <button class="tab" data-t="ideas">সেভ করা আইডিয়া <span id="cnt"></span></button>
+  <span id="sync" class="m" style="margin-left:auto"></span>
+  <button class="tab" data-t="set">⚙ সেটিংস</button>
+</header>
+<main>
+  <div id="msg"></div>
+  <div id="view"></div>
+</main>
+
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let S={key:"",akey:"",fb:"",sec:"",t:0,seen:{},lists:{business:[],tech:[]},ideas:[]};
+try{const x=JSON.parse(localStorage.getItem("ytidea_v1")||"null");if(x)S=Object.assign(S,x)}catch(e){}
+const store=()=>{try{localStorage.setItem("ytidea_v1",JSON.stringify(S))}catch(e){}};
+let pt;
+const save=()=>{S.t=Date.now();store();clearTimeout(pt);pt=setTimeout(push,800)};
+const cache={};          // channelId -> videos
+let tab="business", kwState={q:"",sug:[],rows:null}, minScore=2;
+
+/* ---------- API ---------- */
+async function api(path,p){
+  if(!S.key) throw new Error("আগে ⚙ সেটিংস ট্যাবে YouTube API key বসাও।");
+  const u=new URL("https://www.googleapis.com/youtube/v3/"+path);
+  Object.entries({...p,key:S.key}).forEach(([k,v])=>u.searchParams.set(k,v));
+  const r=await fetch(u); const j=await r.json();
+  if(!r.ok) throw new Error(j.error?.message||("Error "+r.status));
+  return j;
+}
+async function resolveChannel(input){
+  input=input.trim();
+  const id=input.match(/UC[\w-]{22}/);
+  let p={part:"snippet,contentDetails"};
+  if(id) p.id=id[0];
+  else{
+    const h=input.match(/@[\w.\-]+/);
+    p.forHandle=h?h[0]:"@"+input.replace(/^@/,"");
+  }
+  const j=await api("channels",p);
+  if(!j.items?.length) throw new Error("চ্যানেল পাওয়া যায়নি: "+input);
+  const c=j.items[0];
+  return {id:c.id,title:c.snippet.title,uploads:c.contentDetails.relatedPlaylists.uploads};
+}
+async function loadVideos(ch,force){
+  if(cache[ch.id]&&!force) return cache[ch.id];
+  const pl=await api("playlistItems",{part:"contentDetails",playlistId:ch.uploads,maxResults:30});
+  const ids=pl.items.map(i=>i.contentDetails.videoId).join(",");
+  if(!ids) return cache[ch.id]=[];
+  const v=await api("videos",{part:"snippet,statistics",id:ids});
+  let list=v.items.map(x=>({id:x.id,title:x.snippet.title,thumb:(x.snippet.thumbnails.medium||x.snippet.thumbnails.default).url,
+    date:x.snippet.publishedAt,views:+x.statistics.viewCount||0,ch:ch.title}));
+  const sorted=list.map(x=>x.views).sort((a,b)=>a-b);
+  const med=sorted[Math.floor(sorted.length/2)]||1;
+  list.forEach(x=>x.score=x.views/Math.max(med,1));
+  return cache[ch.id]=list;
+}
+
+/* ---------- helpers ---------- */
+const fmt=n=>n>=1e6?(n/1e6).toFixed(1)+"M":n>=1e3?(n/1e3).toFixed(1)+"K":String(n);
+const age=d=>{const days=Math.floor((Date.now()-new Date(d))/864e5);
+  return days<1?"আজ":days<30?days+" দিন আগে":days<365?Math.floor(days/30)+" মাস আগে":(days/365).toFixed(1)+" বছর আগে"};
+const msg=t=>$("#msg").textContent=t||"";
+const isSaved=id=>S.ideas.some(i=>i.id===id);
+
+/* ---------- views ---------- */
+function setTab(t){tab=t;msg("");document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("on",b.dataset.t===t));
+  $("#cnt").textContent=S.ideas.length?"("+S.ideas.length+")":"";
+  ({business:viewList,tech:viewList,kw:viewKw,ai:viewAi,ideas:viewIdeas,set:viewSet})[t]();}
+
+function viewSet(){
+  $("#view").innerHTML=`<p>YouTube Data API v3 key বসাও। এটা শুধু তোমার ব্রাউজারে সেভ থাকে।</p>
+  <div class="row"><input id="k" style="min-width:320px" placeholder="AIza..." value="${esc(S.key)}"><button class="btn" id="ks">সেভ</button></div>
+  <p style="margin-top:20px">Anthropic (Claude) API key — <b>ঐচ্ছিক</b>। দিলে ✨ ট্যাবে এক ক্লিকে আইডিয়া জেনারেট হবে (আলাদা পেইড কোটা)। না দিলে "প্রম্পট কপি" করে Claude চ্যাটে পেস্ট করলেই চলবে।</p>
+  <div class="row"><input id="ak" style="min-width:320px" placeholder="sk-ant-..." value="${esc(S.akey)}"></div>
+  <p class="m">কীভাবে পাবে: console.cloud.google.com → নতুন প্রজেক্ট → "YouTube Data API v3" Enable → Credentials → Create API key।</p>
+  <h3 style="margin-top:28px">☁ সব ডিভাইসে সিঙ্ক (Google Sheet)</h3>
+  <div class="row"><input id="fu" style="min-width:320px" placeholder="https://script.google.com/macros/s/.../exec" value="${esc(S.fb)}"></div>
+  <div class="row"><input id="fs" style="min-width:320px" placeholder="সিক্রেট কী (অটো তৈরি হবে)" value="${esc(S.sec)}"><button class="btn g" id="fg">নতুন কী</button></div>
+  <div class="row"><button class="btn" id="fsv">সিঙ্ক চালু করো</button><button class="btn g" id="sc1">ডিভাইস সেটআপ কোড কপি</button><button class="btn g" id="sc2">সেটআপ কোড পেস্ট</button></div>
+  <p class="m">চ্যানেল তালিকা, আইডিয়া ও "শেষ স্ক্যান" সব ডিভাইসে একই থাকবে। নতুন ডিভাইসে "সেটআপ কোড পেস্ট" করলেই key সহ সব বসে যাবে। সেটআপ কোড কাউকে দিও না।</p>
+  <div class="row"><button class="btn g" id="exp">ব্যাকআপ (JSON কপি)</button><button class="btn g" id="imp">ব্যাকআপ থেকে ফিরিয়ে আনো</button></div>`;
+  $("#ks").onclick=()=>{S.key=$("#k").value.trim();S.akey=$("#ak").value.trim();save();msg("সেভ হয়েছে ✓")};
+  const rk=()=>Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,"0")).join("");
+  $("#fg").onclick=()=>{$("#fs").value=rk()};
+  $("#fsv").onclick=()=>{
+    S.fb=$("#fu").value.trim();let sc=$("#fs").value.trim();if(sc.length<16)sc=rk();S.sec=sc;$("#fs").value=sc;
+    S.key=$("#k").value.trim();S.akey=$("#ak").value.trim();store();
+    if(!S.fb)return msg("Apps Script Web App URL দাও।");
+    msg("সিঙ্ক চালু হচ্ছে…");pull().then(()=>msg("সিঙ্ক চালু ✓"))};
+  $("#sc1").onclick=()=>{navigator.clipboard.writeText(btoa(JSON.stringify({u:S.fb,s:S.sec,k:S.key,a:S.akey})));msg("সেটআপ কোড কপি হয়েছে ✓ নতুন ডিভাইসে পেস্ট করো")};
+  $("#sc2").onclick=()=>{const t=prompt("সেটআপ কোড পেস্ট করো");if(!t)return;
+    try{const x=JSON.parse(atob(t.trim()));S.fb=x.u||"";S.sec=x.s||"";S.key=x.k||"";S.akey=x.a||"";store();
+      pull().then(()=>{msg("সেটআপ হয়েছে ✓");viewSet()})}catch(e){msg("কোড ঠিক নেই")}};
+  $("#exp").onclick=()=>{navigator.clipboard.writeText(JSON.stringify({lists:S.lists,ideas:S.ideas}));msg("কপি হয়েছে ✓")};
+  $("#imp").onclick=()=>{const t=prompt("ব্যাকআপ JSON পেস্ট করো");if(!t)return;
+    try{const x=JSON.parse(t);S.lists=x.lists||S.lists;S.ideas=x.ideas||S.ideas;save();msg("ফিরে এসেছে ✓")}catch(e){msg("JSON ঠিক নেই")}};
+}
+
+function viewList(){
+  const list=S.lists[tab];
+  $("#view").innerHTML=`
+  <div class="row"><input id="ci" style="flex:1;min-width:240px" placeholder="চ্যানেল যোগ করো: @handle, চ্যানেল লিংক বা ID">
+    <button class="btn" id="add">যোগ করো</button></div>
+  <div class="chips">${list.map((c,i)=>`<span class="chip">${esc(c.title)}<button data-i="${i}" title="মুছো">×</button></span>`).join("")||'<span class="m">এখনো কোনো চ্যানেল নেই।</span>'}</div>
+  <div class="row"><button class="btn" id="go">ভিডিও আনো / রিফ্রেশ</button>
+    <label class="m">দেখাও:
+    <select id="ms"><option value="0">সব</option><option value="1.5">১.৫x+</option><option value="2">২x+ (আউটলায়ার)</option><option value="3">৩x+</option></select></label></div>
+  <div id="res"></div>`;
+  $("#ms").value=String(minScore);
+  $("#ms").onchange=e=>{minScore=+e.target.value;renderRes()};
+  $("#add").onclick=async()=>{const v=$("#ci").value;if(!v.trim())return;
+    try{msg("খুঁজছি…");const ch=await resolveChannel(v);
+      if(!list.some(c=>c.id===ch.id)){list.push(ch);save()}viewList();msg("")}catch(e){msg(e.message)}};
+  document.querySelectorAll(".chip button").forEach(b=>b.onclick=()=>{list.splice(+b.dataset.i,1);save();viewList()});
+  $("#go").onclick=async()=>{
+    if(!list.length)return msg("আগে অন্তত একটা চ্যানেল যোগ করো।");
+    try{msg("ভিডিও আনছি…");
+      for(const ch of list) await loadVideos(ch,true);
+      msg("");renderRes()}catch(e){msg(e.message)}};
+  if(list.every(c=>cache[c.id])&&list.length) renderRes();
+}
+function renderRes(){
+  const list=S.lists[tab], box=$("#res"); if(!box)return;
+  let all=list.flatMap(c=>cache[c.id]||[]).filter(v=>v.score>=minScore).sort((a,b)=>b.score-a.score).slice(0,60);
+  box.innerHTML=all.length?`<div class="grid">${all.map(card).join("")}</div>`:'<div class="empty">দেখানোর মতো ভিডিও নেই। "ভিডিও আনো" চাপো অথবা ফিল্টার কমাও।</div>';
+  bindSave(box,all);
+}
+function card(v){
+  return `<div class="card"><a href="https://www.youtube.com/watch?v=${v.id}" target="_blank" rel="noopener"><img loading="lazy" src="${esc(v.thumb)}"></a>
+  <div class="cb"><a href="https://www.youtube.com/watch?v=${v.id}" target="_blank" rel="noopener">${esc(v.title)}</a>
+  <div class="m">${esc(v.ch)} · ${fmt(v.views)} ভিউ · ${age(v.date)}</div>
+  <div><span class="badge ${v.score<2?"lo":""}">${v.score.toFixed(1)}x</span> <span class="m">চ্যানেলের মধ্যমার তুলনায়</span></div>
+  <div class="sv"><button class="btn ${isSaved(v.id)?"g":""}" data-id="${v.id}">${isSaved(v.id)?"✓ সেভ করা":"＋ আইডিয়া সেভ"}</button></div></div></div>`;
+}
+function bindSave(box,vids){
+  box.querySelectorAll(".sv button").forEach(b=>b.onclick=()=>{
+    const v=vids.find(x=>x.id===b.dataset.id);if(!v)return;
+    const i=S.ideas.findIndex(x=>x.id===v.id);
+    if(i>=0)S.ideas.splice(i,1);else S.ideas.unshift({id:v.id,title:v.title,thumb:v.thumb,ch:v.ch,views:v.views,from:tab,note:"",at:Date.now()});
+    save();$("#cnt").textContent=S.ideas.length?"("+S.ideas.length+")":"";
+    b.className="btn "+(isSaved(v.id)?"g":"");b.textContent=isSaved(v.id)?"✓ সেভ করা":"＋ আইডিয়া সেভ";});
+}
+
+/* ---------- English keyword research ---------- */
+function suggest(q){
+  return new Promise(res=>{
+    const cb="__sg"+Date.now(), s=document.createElement("script");
+    const done=r=>{delete window[cb];s.remove();res(r)};
+    window[cb]=d=>done((d[1]||[]).map(x=>x[0]));
+    s.onerror=()=>done([]);
+    s.src="https://suggestqueries.google.com/complete/search?client=youtube&ds=yt&hl=en&q="+encodeURIComponent(q)+"&jsonp="+cb;
+    document.head.appendChild(s);setTimeout(()=>window[cb]&&done([]),5000);
+  });
+}
+function viewKw(){
+  $("#view").innerHTML=`<div class="row"><input id="q" style="flex:1;min-width:240px" placeholder="টপিক লেখো, যেমন: TradingView screener" value="${esc(kwState.q)}">
+  <button class="btn" id="kg">খোঁজো</button></div>
+  <p class="m">সাজেশন = মানুষ আসলে যা সার্চ করে। নিচের টেবিলে শীর্ষ ১০ ভিডিও: পুরোনো ভিডিও বা ছোট চ্যানেল ওপরে থাকলে ঢোকার সুযোগ আছে। (প্রতি সার্চে ~১০১ কোটা ইউনিট, দৈনিক ১০,০০০ এর মধ্যে)</p>
+  <div class="sug" id="sg"></div><div id="kr"></div>`;
+  $("#q").onkeydown=e=>{if(e.key==="Enter")$("#kg").click()};
+  $("#kg").onclick=runKw; paintKw();
+}
+async function runKw(){
+  const q=$("#q").value.trim();if(!q)return;kwState.q=q;
+  try{msg("খুঁজছি…");
+    kwState.sug=await suggest(q);paintKw();
+    kwState.rows=await searchTop(q);msg("");paintKw();
+  }catch(e){msg(e.message)}
+}
+async function searchTop(q){
+  const s=await api("search",{part:"snippet",q,type:"video",maxResults:10,relevanceLanguage:"en"});
+  const ids=s.items.map(i=>i.id.videoId).join(","); if(!ids)return[];
+  const v=await api("videos",{part:"snippet,statistics",id:ids});
+  const cids=[...new Set(v.items.map(x=>x.snippet.channelId))].join(",");
+  const c=await api("channels",{part:"statistics",id:cids});
+  const subs={};c.items.forEach(x=>subs[x.id]=x.statistics.hiddenSubscriberCount?null:+x.statistics.subscriberCount);
+  const order=s.items.map(i=>i.id.videoId);
+  return order.map(id=>v.items.find(x=>x.id===id)).filter(Boolean).map(x=>({
+    id:x.id,title:x.snippet.title,thumb:(x.snippet.thumbnails.medium||x.snippet.thumbnails.default).url,
+    ch:x.snippet.channelTitle,subs:subs[x.snippet.channelId],views:+x.statistics.viewCount||0,date:x.snippet.publishedAt,from:"kw"}));
+}
+function paintKw(){
+  const sg=$("#sg"),kr=$("#kr");if(!sg)return;
+  sg.innerHTML=kwState.sug.map(s=>`<button>${esc(s)}</button>`).join("");
+  sg.querySelectorAll("button").forEach(b=>b.onclick=()=>{$("#q").value=b.textContent;runKw()});
+  const r=kwState.rows;
+  kr.innerHTML=r?`<div class="wrap"><table><tr><th></th><th>ভিডিও</th><th>চ্যানেল</th><th>সাবস্ক্রাইবার</th><th>ভিউ</th><th>বয়স</th><th></th></tr>
+  ${r.map(v=>`<tr><td><img src="${esc(v.thumb)}" width="96"></td>
+  <td><a href="https://www.youtube.com/watch?v=${v.id}" target="_blank" rel="noopener" style="color:var(--tx)">${esc(v.title)}</a></td>
+  <td>${esc(v.ch)}</td><td>${v.subs==null?"লুকানো":fmt(v.subs)}</td><td>${fmt(v.views)}</td><td>${age(v.date)}</td>
+  <td class="sv"><button class="btn ${isSaved(v.id)?"g":""}" data-id="${v.id}">${isSaved(v.id)?"✓":"＋"}</button></td></tr>`).join("")}</table></div>`:"";
+  if(r)bindSave(kr,r);
+}
+
+/* ---------- saved ideas ---------- */
+function viewIdeas(){
+  const L={business:"Business",tech:"Tech (বাংলা)",kw:"Tech (English)"};
+  $("#view").innerHTML=`<div class="row"><button class="btn g" id="cp">সব আইডিয়া কপি করো (টেক্সট)</button></div>`+
+  (S.ideas.map((v,i)=>`<div class="idea"><img src="${esc(v.thumb)}"><div style="flex:1">
+  <a href="https://www.youtube.com/watch?v=${v.id}" target="_blank" rel="noopener" style="color:var(--tx);font-weight:600">${esc(v.title)}</a>
+  <div class="m">${esc(v.ch)} · ${fmt(v.views)} ভিউ · ${L[v.from]||""}</div>
+  <textarea data-i="${i}" placeholder="আমার নোট / আমার ভার্সনের আইডিয়া…">${esc(v.note)}</textarea>
+  <button class="btn g" data-d="${i}" style="margin-top:6px">মুছো</button></div></div>`).join("")||'<div class="empty">এখনো কোনো আইডিয়া সেভ করা হয়নি।</div>');
+  document.querySelectorAll(".idea textarea").forEach(t=>t.oninput=()=>{S.ideas[+t.dataset.i].note=t.value;save()});
+  document.querySelectorAll("[data-d]").forEach(b=>b.onclick=()=>{S.ideas.splice(+b.dataset.d,1);save();setTab("ideas")});
+  const cp=$("#cp");if(cp)cp.onclick=()=>{navigator.clipboard.writeText(S.ideas.map(v=>`- ${v.title}\n  https://youtu.be/${v.id}\n  ${v.note}`).join("\n"));msg("কপি হয়েছে ✓")};
+}
+
+
+/* ---------- scan, new uploads & AI ideas ---------- */
+let aiList="business", aiData=null;
+function viewAi(){
+  $("#view").innerHTML=`<div class="row"><select id="al"><option value="business">Business চ্যানেলগুলো</option><option value="tech">Tech (বাংলা) চ্যানেলগুলো</option></select>
+  <button class="btn" id="sc">স্ক্যান করো</button></div>
+  <p class="m">স্ক্যান করলে সব সেভ করা চ্যানেল থেকে (১) শেষ স্ক্যানের পর আসা নতুন ভিডিও ও (২) সাম্প্রতিক আউটলায়ার আলাদা হবে, তারপর সেগুলো বিশ্লেষণ করে আইডিয়া বানানো যাবে। অ্যাপ খুললে নিজে থেকেই স্ক্যান হয়।</p>
+  <div id="ar"></div>`;
+  $("#al").value=aiList;
+  $("#al").onchange=e=>{aiList=e.target.value;aiData=null;viewAi()};
+  $("#sc").onclick=scanAi;
+  if(!aiData&&S.key&&S.lists[aiList].length)scanAi();else paintAi();
+}
+async function scanAi(){
+  const list=S.lists[aiList];
+  if(!list.length)return msg("আগে Business/Tech ট্যাবে চ্যানেল যোগ করো।");
+  try{
+    msg("সব চ্যানেল স্ক্যান করছি…");
+    for(const ch of list) await loadVideos(ch,true);
+    const since=S.seen[aiList]||Date.now()-7*864e5;
+    const all=list.flatMap(c=>cache[c.id]||[]);
+    aiData={since,
+      fresh:all.filter(v=>new Date(v.date)>since).sort((a,b)=>new Date(b.date)-new Date(a.date)),
+      top:all.filter(v=>v.score>=2&&Date.now()-new Date(v.date)<120*864e5).sort((a,b)=>b.score-a.score).slice(0,25)};
+    S.seen[aiList]=Date.now();save();msg("");paintAi();
+  }catch(e){msg(e.message)}
+}
+function cardNew(v){
+  const d=Math.max((Date.now()-new Date(v.date))/864e5,0.25);
+  return card(v).replace(/<div><span class="badge[\s\S]*?<\/div>\n?  <div class="sv">/,
+    `<div><span class="badge">🆕 ~${fmt(Math.round(v.views/d))} ভিউ/দিন</span></div>\n  <div class="sv">`);
+}
+function buildPrompt(){
+  const niche=aiList==="business"?"business / entrepreneurship":"technology";
+  const f=v=>`- "${v.title}" | ${v.ch} | ${fmt(v.views)} views | ${age(v.date)} | ${v.score.toFixed(1)}x`;
+  return `আমি একটি বাংলা ইউটিউব চ্যানেল চালাই (বিষয়: ${niche})। নিচে আমার ট্র্যাক করা চ্যানেলগুলোর ডেটা।
+
+সাম্প্রতিক আউটলায়ার ভিডিও (চ্যানেলের মধ্যমার তুলনায় কত গুণ চলেছে):
+${aiData.top.map(f).join("\n")||"(নেই)"}
+
+নতুন আপলোড (শেষ স্ক্যানের পর):
+${aiData.fresh.map(f).join("\n")||"(নেই)"}
+
+এই ডেটা বিশ্লেষণ করে:
+১) এখন কোন টপিক/প্যাটার্ন/টাইটেল স্টাইল চলছে, সংক্ষেপে বলো।
+২) আমার চ্যানেলের জন্য ১০টি বাংলা ভিডিও আইডিয়া দাও। প্রতিটিতে থাকবে: বাংলা টাইটেল, প্রথম ১০ সেকেন্ডের হুক, কেন কাজ করবে।
+সরাসরি কপি নয়, বাংলাদেশের দর্শকের উপযোগী নতুন অ্যাঙ্গেল দাও।`;
+}
+function paintAi(){
+  const box=$("#ar");if(!box)return;
+  if(!aiData){box.innerHTML='<div class="empty">"স্ক্যান করো" চাপো।</div>';return}
+  const {fresh,top}=aiData;
+  box.innerHTML=`<h3>🆕 নতুন আপলোড (${fresh.length}) <span class="m">— ${age(aiData.since)} এর পর থেকে</span></h3>
+  ${fresh.length?`<div class="grid">${fresh.map(cardNew).join("")}</div>`:'<div class="empty">নতুন কোনো ভিডিও নেই।</div>'}
+  <h3 style="margin-top:24px">🔥 সাম্প্রতিক আউটলায়ার (${top.length})</h3>
+  ${top.length?`<div class="grid">${top.map(card).join("")}</div>`:'<div class="empty">এই মুহূর্তে আউটলায়ার নেই।</div>'}
+  <h3 style="margin-top:24px">✨ আইডিয়া জেনারেট</h3>
+  <div class="row"><button class="btn" id="cpp">প্রম্পট কপি করো (Claude চ্যাটে পেস্ট করার জন্য)</button>
+  ${S.akey?'<button class="btn" id="gen">এখানেই জেনারেট করো</button>':'<span class="m">(এখানেই জেনারেট করতে ⚙ ট্যাবে Anthropic key দাও)</span>'}</div>
+  <pre id="ao" style="white-space:pre-wrap;font:inherit;background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;display:none"></pre>`;
+  bindSave(box,[...fresh,...top]);
+  $("#cpp").onclick=()=>{navigator.clipboard.writeText(buildPrompt());msg("প্রম্পট কপি হয়েছে ✓ এখন Claude চ্যাটে পেস্ট করো")};
+  const g=$("#gen");if(g)g.onclick=genAi;
+}
+async function genAi(){
+  const o=$("#ao");o.style.display="block";o.textContent="Claude বিশ্লেষণ করছে…";
+  try{
+    const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
+      headers:{"content-type":"application/json","x-api-key":S.akey,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+      body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:2500,messages:[{role:"user",content:buildPrompt()}]})});
+    const j=await r.json();
+    if(!r.ok)throw new Error(j.error?.message||("Error "+r.status));
+    o.textContent=j.content.map(c=>c.text||"").join("\n");
+  }catch(e){o.style.display="none";msg(e.message)}
+}
+
+
+/* ---------- cross-device sync (Firebase Realtime Database REST) ---------- */
+const syncMsg=t=>{const e=document.getElementById("sync");if(e)e.textContent=t};
+async function push(){
+  if(!S.fb||!S.sec)return;
+  try{syncMsg("☁ সেভ হচ্ছে…");
+    const r=await fetch(S.fb,{method:"POST",body:JSON.stringify({k:S.sec,data:{lists:S.lists,ideas:S.ideas,seen:S.seen,t:S.t}})});
+    const j=await r.json();if(!j.ok)throw 0;syncMsg("☁ সিঙ্ক ✓");
+  }catch(e){syncMsg("☁ সিঙ্ক ব্যর্থ")}
+}
+async function pull(){
+  if(!S.fb||!S.sec)return;
+  try{syncMsg("☁ আনছি…");
+    const r=await fetch(S.fb+(S.fb.includes("?")?"&":"?")+"k="+encodeURIComponent(S.sec));
+    const j=await r.json();if(!j.ok)throw 0;const d=j.data;
+    const has=S.ideas.length||S.lists.business.length||S.lists.tech.length;
+    if(d&&d.t>S.t){
+      S.lists={business:d.lists?.business||[],tech:d.lists?.tech||[]};
+      S.ideas=d.ideas||[];S.seen=d.seen||{};S.t=d.t;store();
+      if(!/INPUT|TEXTAREA/.test(document.activeElement?.tagName||""))setTab(tab);
+    }else if((!d&&has)||(d&&d.t<S.t))await push();
+    syncMsg("☁ সিঙ্ক ✓");
+  }catch(e){syncMsg("☁ সিঙ্ক ব্যর্থ")}
+}
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)pull()});
+
+document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>setTab(b.dataset.t));
+setTab(S.key?"business":"set");
+pull();
+</script>
+</body>
+</html>
