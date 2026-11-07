@@ -50,6 +50,7 @@ td,th{padding:8px 10px;border-bottom:1px solid var(--bd);text-align:left;font-si
   <h1>🎯 Idea Dashboard</h1>
   <button class="tab" data-t="business">Business</button>
   <button class="tab" data-t="tech">Tech (বাংলা)</button>
+  <button class="tab" data-t="techen">Tech (English চ্যানেল)</button>
   <button class="tab" data-t="kw">Tech (English কিওয়ার্ড)</button>
   <button class="tab" data-t="ai">✨ নতুন ও AI আইডিয়া</button>
   <button class="tab" data-t="ideas">সেভ করা আইডিয়া <span id="cnt"></span></button>
@@ -66,6 +67,7 @@ const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let S={key:"",akey:"",fb:"",sec:"",t:0,seen:{},lists:{business:[],tech:[]},ideas:[]};
 try{const x=JSON.parse(localStorage.getItem("ytidea_v1")||"null");if(x)S=Object.assign(S,x)}catch(e){}
+S.lists=S.lists||{};["business","tech","techen"].forEach(k=>S.lists[k]=S.lists[k]||[]);
 const store=()=>{try{localStorage.setItem("ytidea_v1",JSON.stringify(S))}catch(e){}};
 let pt;
 const save=()=>{S.t=Date.now();store();clearTimeout(pt);pt=setTimeout(push,800)};
@@ -119,7 +121,7 @@ const isSaved=id=>S.ideas.some(i=>i.id===id);
 /* ---------- views ---------- */
 function setTab(t){tab=t;msg("");document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("on",b.dataset.t===t));
   $("#cnt").textContent=S.ideas.length?"("+S.ideas.length+")":"";
-  ({business:viewList,tech:viewList,kw:viewKw,ai:viewAi,ideas:viewIdeas,set:viewSet})[t]();}
+  ({business:viewList,tech:viewList,techen:viewList,kw:viewKw,ai:viewAi,ideas:viewIdeas,set:viewSet})[t]();}
 
 function viewSet(){
   $("#view").innerHTML=`<p>YouTube Data API v3 key বসাও। এটা শুধু তোমার ব্রাউজারে সেভ থাকে।</p>
@@ -248,7 +250,7 @@ function paintKw(){
 
 /* ---------- saved ideas ---------- */
 function viewIdeas(){
-  const L={business:"Business",tech:"Tech (বাংলা)",kw:"Tech (English)"};
+  const L={business:"Business",tech:"Tech (বাংলা)",techen:"Tech (English চ্যানেল)",kw:"Tech (English)"};
   $("#view").innerHTML=`<div class="row"><button class="btn g" id="cp">সব আইডিয়া কপি করো (টেক্সট)</button></div>`+
   (S.ideas.map((v,i)=>`<div class="idea"><img src="${esc(v.thumb)}"><div style="flex:1">
   <a href="https://www.youtube.com/watch?v=${v.id}" target="_blank" rel="noopener" style="color:var(--tx);font-weight:600">${esc(v.title)}</a>
@@ -264,7 +266,7 @@ function viewIdeas(){
 /* ---------- scan, new uploads & AI ideas ---------- */
 let aiList="business", aiData=null;
 function viewAi(){
-  $("#view").innerHTML=`<div class="row"><select id="al"><option value="business">Business চ্যানেলগুলো</option><option value="tech">Tech (বাংলা) চ্যানেলগুলো</option></select>
+  $("#view").innerHTML=`<div class="row"><select id="al"><option value="business">Business চ্যানেলগুলো</option><option value="tech">Tech (বাংলা) চ্যানেলগুলো</option><option value="techen">Tech (English) চ্যানেলগুলো</option></select>
   <button class="btn" id="sc">স্ক্যান করো</button></div>
   <p class="m">স্ক্যান করলে সব সেভ করা চ্যানেল থেকে (১) শেষ স্ক্যানের পর আসা নতুন ভিডিও ও (২) সাম্প্রতিক আউটলায়ার আলাদা হবে, তারপর সেগুলো বিশ্লেষণ করে আইডিয়া বানানো যাবে। অ্যাপ খুললে নিজে থেকেই স্ক্যান হয়।</p>
   <div id="ar"></div>`;
@@ -293,9 +295,9 @@ function cardNew(v){
     `<div><span class="badge">🆕 ~${fmt(Math.round(v.views/d))} ভিউ/দিন</span></div>\n  <div class="sv">`);
 }
 function buildPrompt(){
-  const niche=aiList==="business"?"business / entrepreneurship":"technology";
+  const niche=aiList==="business"?"business / entrepreneurship":"technology";const en=aiList==="techen";
   const f=v=>`- "${v.title}" | ${v.ch} | ${fmt(v.views)} views | ${age(v.date)} | ${v.score.toFixed(1)}x`;
-  return `আমি একটি বাংলা ইউটিউব চ্যানেল চালাই (বিষয়: ${niche})। নিচে আমার ট্র্যাক করা চ্যানেলগুলোর ডেটা।
+  return `আমি একটি ${en?"ইংরেজি":"বাংলা"} ইউটিউব চ্যানেল চালাই (বিষয়: ${niche})। নিচে আমার ট্র্যাক করা চ্যানেলগুলোর ডেটা।
 
 সাম্প্রতিক আউটলায়ার ভিডিও (চ্যানেলের মধ্যমার তুলনায় কত গুণ চলেছে):
 ${aiData.top.map(f).join("\n")||"(নেই)"}
@@ -305,8 +307,8 @@ ${aiData.fresh.map(f).join("\n")||"(নেই)"}
 
 এই ডেটা বিশ্লেষণ করে:
 ১) এখন কোন টপিক/প্যাটার্ন/টাইটেল স্টাইল চলছে, সংক্ষেপে বলো।
-২) আমার চ্যানেলের জন্য ১০টি বাংলা ভিডিও আইডিয়া দাও। প্রতিটিতে থাকবে: বাংলা টাইটেল, প্রথম ১০ সেকেন্ডের হুক, কেন কাজ করবে।
-সরাসরি কপি নয়, বাংলাদেশের দর্শকের উপযোগী নতুন অ্যাঙ্গেল দাও।`;
+২) আমার চ্যানেলের জন্য ১০টি ${en?"ইংরেজি":"বাংলা"} ভিডিও আইডিয়া দাও। প্রতিটিতে থাকবে: ${en?"ইংরেজি":"বাংলা"} টাইটেল, প্রথম ১০ সেকেন্ডের হুক, কেন কাজ করবে।
+${en?"সরাসরি কপি নয়। সার্চে পাওয়া যাবে এমন (search intent) টপিক বেছে SEO-বান্ধব ইংরেজি টাইটেল দাও, আর প্রতিটির সম্ভাব্য সার্চ কিওয়ার্ডও লেখো।":"সরাসরি কপি নয়, বাংলাদেশের দর্শকের উপযোগী নতুন অ্যাঙ্গেল দাও।"}`;
 }
 function paintAi(){
   const box=$("#ar");if(!box)return;
@@ -351,9 +353,9 @@ async function pull(){
   try{syncMsg("☁ আনছি…");
     const r=await fetch(S.fb+(S.fb.includes("?")?"&":"?")+"k="+encodeURIComponent(S.sec));
     const j=await r.json();if(!j.ok)throw 0;const d=j.data;
-    const has=S.ideas.length||S.lists.business.length||S.lists.tech.length;
+    const has=S.ideas.length||S.lists.business.length||S.lists.tech.length||S.lists.techen.length;
     if(d&&d.t>S.t){
-      S.lists={business:d.lists?.business||[],tech:d.lists?.tech||[]};
+      S.lists={business:d.lists?.business||[],tech:d.lists?.tech||[],techen:d.lists?.techen||[]};
       S.ideas=d.ideas||[];S.seen=d.seen||{};S.t=d.t;store();
       if(!/INPUT|TEXTAREA/.test(document.activeElement?.tagName||""))setTab(tab);
     }else if((!d&&has)||(d&&d.t<S.t))await push();
